@@ -1,11 +1,12 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import urllib.parse
-from flask import Flask, request
-import os
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = '8679423959:AAGYdSA7TbcFUBpRMdYOJR2xOzeX_XLxReg'
-WEBHOOK_URL = os.getenv('WEBHOOK_URL', 'https://telegram-bot.onrender.com')
 
 MOVIES = [
     {'title': 'Inception', 'year': '2010', 'id': 'tt1375666'},
@@ -21,70 +22,69 @@ MOVIES = [
 ]
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode='Markdown')
-app = Flask(__name__)
 
-@bot.message_handler(commands=['start'])
+@bot.message_handler(commands=['start', 'help'])
 def handle_start(message):
-    text = "🎬 Welcome to Movie Bot!\n\nSend a movie name:\n• Inception\n• Avatar\n• Iron Man"
+    text = "🎬 Welcome to Movie Bot!\n\nSend a movie name to search:\n• Inception\n• Avatar\n• Iron Man\n• The Dark Knight"
     bot.send_message(message.chat.id, text)
 
 @bot.message_handler(func=lambda m: len(m.text) > 0)
 def handle_search(message):
-    query = message.text.lower()
-    results = [m for m in MOVIES if query in m['title'].lower()]
-    
-    if not results:
-        bot.send_message(message.chat.id, f"❌ Not found: {query}")
-        return
-    
-    for movie in results[:3]:
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("📥 Download", callback_data=f"dl_{movie['id']}"))
-        markup.add(InlineKeyboardButton("🎬 Stream", callback_data=f"st_{movie['id']}"))
+    try:
+        query = message.text.lower()
+        results = [m for m in MOVIES if query in m['title'].lower()]
         
-        bot.send_message(message.chat.id, f"*{movie['title']}* ({movie['year']})", reply_markup=markup)
+        if not results:
+            bot.send_message(message.chat.id, f"❌ Not found: {query}\n\nTry: Inception, Avatar, Iron Man")
+            return
+        
+        for movie in results[:3]:
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("📥 Download", callback_data=f"dl_{movie['id']}"))
+            markup.add(InlineKeyboardButton("🎬 Stream", callback_data=f"st_{movie['id']}"))
+            
+            bot.send_message(message.chat.id, f"*{movie['title']}* ({movie['year']})", reply_markup=markup)
+    except Exception as e:
+        logger.error(f"Error in handle_search: {e}")
+        bot.send_message(message.chat.id, "❌ Error occurred, please try again")
 
 @bot.callback_query_handler(func=lambda c: True)
 def handle_button(call):
-    bot.answer_callback_query(call.id)
-    
-    parts = call.data.split('_')
-    if len(parts) != 2:
-        return
-    
-    action, movie_id = parts
-    movie = next((m for m in MOVIES if m['id'] == movie_id), None)
-    
-    if not movie:
-        bot.send_message(call.message.chat.id, "Not found")
-        return
-    
-    if action == 'dl':
-        text = f"*Download {movie['title']}*\n\n[Search](https://www.google.com/search?q={urllib.parse.quote(movie['title'])})\n[HDHub4u](https://hdhub4u.xyz)"
-    else:
-        text = f"*Stream {movie['title']}*\n\n[HDHub4u](https://hdhub4u.xyz)\n[Mirror](https://hdhub4u.site)"
-    
-    bot.send_message(call.message.chat.id, text)
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
     try:
-        json_data = request.get_json()
-        if json_data:
-            update = telebot.types.Update.de_json(json_data)
-            bot.process_new_updates([update])
-    except:
-        pass
-    return "OK"
-
-@app.route('/')
-def index():
-    return "OK"
+        bot.answer_callback_query(call.id)
+        
+        parts = call.data.split('_')
+        if len(parts) != 2:
+            bot.send_message(call.message.chat.id, "❌ Invalid action")
+            return
+        
+        action, movie_id = parts
+        movie = next((m for m in MOVIES if m['id'] == movie_id), None)
+        
+        if not movie:
+            bot.send_message(call.message.chat.id, "❌ Movie not found")
+            return
+        
+        if action == 'dl':
+            text = f"*Download {movie['title']}*\n\n[🔍 Search](https://www.google.com/search?q={urllib.parse.quote(movie['title'])})\n[🎬 HDHub4u](https://hdhub4u.xyz)"
+        else:
+            text = f"*Stream {movie['title']}*\n\n[🎬 HDHub4u](https://hdhub4u.xyz)\n[🔗 Mirror](https://hdhub4u.site)"
+        
+        bot.send_message(call.message.chat.id, text)
+    except Exception as e:
+        logger.error(f"Error in handle_button: {e}")
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
-    bot.remove_webhook()
-    bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-    print(f"Starting bot on port {port}")
-    print(f"Webhook: {WEBHOOK_URL}/webhook")
-    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+    print("🚀 Movie Bot Starting with Polling (works on mobile!)...")
+    print("🔄 Removing any existing webhooks first...")
+    try:
+        bot.remove_webhook()
+        print("✅ Webhook removed successfully")
+    except Exception as e:
+        logger.error(f"Webhook removal error: {e}")
+    
+    try:
+        bot.infinity_polling(skip_pending=True)
+    except Exception as e:
+        logger.error(f"Bot error: {e}")
+        bot.infinity_polling(skip_pending=True)
