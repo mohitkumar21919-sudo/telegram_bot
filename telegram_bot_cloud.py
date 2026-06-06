@@ -51,18 +51,27 @@ def handle_search(message):
 @bot.callback_query_handler(func=lambda c: True)
 def handle_button(call):
     try:
-        bot.answer_callback_query(call.id)
+        bot.answer_callback_query(call.id, show_alert=False)
         
-        parts = call.data.split('_')
-        if len(parts) != 2:
-            bot.send_message(call.message.chat.id, "❌ Invalid action")
+        if not call.data or '_' not in call.data:
+            bot.send_message(call.message.chat.id, "❌ Invalid button action")
             return
         
-        action, movie_id = parts
+        parts = call.data.split('_', 1)
+        if len(parts) < 2:
+            bot.send_message(call.message.chat.id, "❌ Invalid action format")
+            return
+        
+        action, movie_id = parts[0], parts[1]
+        
+        if action not in ['dl', 'st']:
+            bot.send_message(call.message.chat.id, "❌ Unknown action")
+            return
+        
         movie = next((m for m in MOVIES if m['id'] == movie_id), None)
         
         if not movie:
-            bot.send_message(call.message.chat.id, "❌ Movie not found")
+            bot.send_message(call.message.chat.id, f"❌ Movie '{movie_id}' not found in database")
             return
         
         if action == 'dl':
@@ -70,9 +79,11 @@ def handle_button(call):
         else:
             text = f"*Stream {movie['title']}*\n\n[🎬 HDHub4u](https://hdhub4u.xyz)\n[🔗 Mirror](https://hdhub4u.site)"
         
-        bot.send_message(call.message.chat.id, text)
+        bot.send_message(call.message.chat.id, text, parse_mode='Markdown')
+        logger.info(f"Button clicked: {action} - {movie_id}")
     except Exception as e:
         logger.error(f"Error in handle_button: {e}")
+        bot.send_message(call.message.chat.id, f"❌ Error: {str(e)}")
 
 if __name__ == '__main__':
     print("🚀 Movie Bot Starting with Polling (works on mobile!)...")
