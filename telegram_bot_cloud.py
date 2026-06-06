@@ -23,30 +23,47 @@ MOVIES = [
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode='Markdown')
 
-@bot.message_handler(commands=['start', 'help'])
-def handle_start(message):
-    text = "🎬 Welcome to Movie Bot!\n\nSend a movie name to search:\n• Inception\n• Avatar\n• Iron Man\n• The Dark Knight"
-    bot.send_message(message.chat.id, text)
-
-@bot.message_handler(func=lambda m: len(m.text) > 0)
-def handle_search(message):
+@bot.message_handler(func=lambda m: True)
+def handle_any_message(message):
     try:
-        query = message.text.lower()
+        # Ignore service messages
+        if message.content_type != 'text':
+            return
+        
+        text = message.text.strip()
+        if not text:
+            return
+        
+        logger.info(f"Received message: {text}")
+        
+        # Handle commands - show welcome message
+        if text.startswith('/start') or text.startswith('/help'):
+            welcome_text = "🎬 Welcome to Movie Bot!\n\nSend a movie name to search:\n• Inception\n• Avatar\n• Iron Man\n• The Dark Knight"
+            bot.send_message(message.chat.id, welcome_text)
+            return
+        
+        # Handle search
+        query = text.lower()
         results = [m for m in MOVIES if query in m['title'].lower()]
         
         if not results:
-            bot.send_message(message.chat.id, f"❌ Not found: {query}\n\nTry: Inception, Avatar, Iron Man")
+            bot.send_message(message.chat.id, f"❌ Not found: {query}\n\nTry: Inception, Avatar, Iron Man, The Dark Knight")
+            logger.info(f"No results for: {query}")
             return
         
+        logger.info(f"Found {len(results)} results for: {query}")
         for movie in results[:3]:
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("📥 Download", callback_data=f"dl_{movie['id']}"))
             markup.add(InlineKeyboardButton("🎬 Stream", callback_data=f"st_{movie['id']}"))
             
-            bot.send_message(message.chat.id, f"*{movie['title']}* ({movie['year']})", reply_markup=markup)
+            bot.send_message(message.chat.id, f"🎬 *{movie['title']}* ({movie['year']})", reply_markup=markup, parse_mode='Markdown')
     except Exception as e:
-        logger.error(f"Error in handle_search: {e}")
-        bot.send_message(message.chat.id, "❌ Error occurred, please try again")
+        logger.error(f"Error in handle_any_message: {e}")
+        try:
+            bot.send_message(message.chat.id, f"❌ Error occurred: {str(e)}")
+        except:
+            pass
 
 @bot.callback_query_handler(func=lambda c: True)
 def handle_button(call):
@@ -83,7 +100,10 @@ def handle_button(call):
         logger.info(f"Button clicked: {action} - {movie_id}")
     except Exception as e:
         logger.error(f"Error in handle_button: {e}")
-        bot.send_message(call.message.chat.id, f"❌ Error: {str(e)}")
+        try:
+            bot.send_message(call.message.chat.id, f"❌ Error: {str(e)}")
+        except:
+            pass
 
 if __name__ == '__main__':
     print("🚀 Movie Bot Starting with Polling (works on mobile!)...")
